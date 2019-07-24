@@ -16,18 +16,46 @@ def load_data(path="../data/cora/", dataset="cora"):
     """Load citation network dataset (cora only for now)"""
     print('Loading {} dataset...'.format(dataset))
 
+    # First element is the index for the document
+    # Final element is the label for the document
+    # Elements in between are the one-hot word (type) features (i.e. bag of words)
     idx_features_labels = np.genfromtxt("{}{}.content".format(path, dataset),
                                         dtype=np.dtype(str))
+
+    # Extract the bag-of-words features as a "Compressed Sparse Row Matrix"
     features = sp.csr_matrix(idx_features_labels[:, 1:-1], dtype=np.float32)
+    # Extract the labels
     labels = encode_onehot(idx_features_labels[:, -1])
 
     # build graph
+    # First column of idx_features_labels consists of the document IDs (i.e. the indices)
     idx = np.array(idx_features_labels[:, 0], dtype=np.int32)
+
+    # Create a map/dict from the IDs to their position in the array
     idx_map = {j: i for i, j in enumerate(idx)}
     edges_unordered = np.genfromtxt("{}{}.cites".format(path, dataset),
                                     dtype=np.int32)
+
+    # Several things happening in this line:
+    # * flatten the NUM_EDGES x 2 matrix;
+    # * apply idx_map.get to replace the values in edges_unordered with their position in the array of indices (i.e. `idx`); and
+    # * reshape the resulting matrix to be NUM_EDGES x 2 again
     edges = np.array(list(map(idx_map.get, edges_unordered.flatten())),
                      dtype=np.int32).reshape(edges_unordered.shape)
+
+    # According to the docs, a coo_matrix is:
+    # "A sparse matrix in COOrdinate format. Also known as the 'ijv' or 'triplet' format."
+    #
+    # Here we are building it using this __init__:
+    #
+    #     coo_matrix((data, (i, j)), [shape=(M, N)])
+    #         to construct from three arrays:
+    #             1. data[:]   the entries of the matrix, in any order
+    #             2. i[:]      the row indices of the matrix entries
+    #             3. j[:]      the column indices of the matrix entries
+    #
+    #         Where ``A[i[k], j[k]] = data[k]``.  When shape is not
+    #         specified, it is inferred from the index arrays
     adj = sp.coo_matrix((np.ones(edges.shape[0]), (edges[:, 0], edges[:, 1])),
                         shape=(labels.shape[0], labels.shape[0]),
                         dtype=np.float32)
@@ -35,7 +63,9 @@ def load_data(path="../data/cora/", dataset="cora"):
     # build symmetric adjacency matrix
     adj = adj + adj.T.multiply(adj.T > adj) - adj.multiply(adj.T > adj)
 
+    # Row-normalize our feature and adjacency matrices
     features = normalize(features)
+    # Note that sp.eye(N) gives us an identity matrix of dimensionality N
     adj = normalize(adj + sp.eye(adj.shape[0]))
 
     idx_train = range(140)
